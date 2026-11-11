@@ -42,6 +42,7 @@ export default function You() {
         </div>
       </div>
       <button className="btn ghost" onClick={() => supabase.auth.signOut()}>Sign out</button>
+      <p className="muted" style={{ textAlign: 'center', marginTop: 16 }}>Version {__BUILD__.slice(0, 16).replace('T', ' ')}</p>
     </div>
   )
 }

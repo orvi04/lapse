@@ -3,10 +3,18 @@ import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
 // GitHub Pages serves the site from /lapse/
+const build = new Date().toISOString()
 export default defineConfig({
   base: '/lapse/',
+  define: { __BUILD__: JSON.stringify(build) },
   plugins: [
     react(),
+    {
+      name: 'version-json',
+      generateBundle() {
+        this.emitFile({ type: 'asset', fileName: 'version.json', source: JSON.stringify({ build }) })
+      },
+    },
     VitePWA({
       registerType: 'autoUpdate',
       manifest: {

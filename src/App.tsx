@@ -6,7 +6,7 @@ import Feed from './pages/Feed'
 import Promises from './pages/Promises'
 import Friends from './pages/Friends'
 import You from './pages/You'
-import Capture from './pages/Capture'
+import NewPost from './pages/NewPost'
 
 const icons = {
   feed: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="12" cy="12" r="4"/></svg>,
@@ -26,7 +26,7 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Feed />} />
         <Route path="/promises" element={<Promises />} />
-        <Route path="/capture" element={<Capture />} />
+        <Route path="/new" element={<NewPost />} />
         <Route path="/friends" element={<Friends />} />
         <Route path="/you" element={<You />} />
         <Route path="*" element={<Navigate to="/" replace />} />
@@ -34,7 +34,7 @@ export default function App() {
       <nav className="nav">
         <NavLink to="/" end className={({ isActive }) => (isActive ? 'active' : '')}>{icons.feed}Feed</NavLink>
         <NavLink to="/promises" className={({ isActive }) => (isActive ? 'active' : '')}>{icons.promises}Promises</NavLink>
-        <NavLink to="/capture"><span className="plus">+</span></NavLink>
+        <NavLink to="/new"><span className="plus">+</span></NavLink>
         <NavLink to="/friends" className={({ isActive }) => (isActive ? 'active' : '')}>{icons.friends}Friends</NavLink>
         <NavLink to="/you" className={({ isActive }) => (isActive ? 'active' : '')}>{icons.you}You</NavLink>
       </nav>
