@@ -48,6 +48,13 @@ export default function PostCard({ b, me, onChanged, owner }: Props) {
     if (error) setErr(error.message); else onChanged()
   }
 
+  async function report() {
+    const reason = prompt('What is wrong with this post?')?.trim()
+    if (!reason) return
+    const { error } = await supabase.from('reports').insert({ reporter_id: me, target_type: 'post', target_id: post.id, reason: reason.slice(0, 500) })
+    setErr(error ? error.message : 'Thanks, we will look at it.')
+  }
+
   async function play() {
     if (!post.media_id) return
     const url = await videoUrl(post.media_id)
@@ -133,6 +140,8 @@ export default function PostCard({ b, me, onChanged, owner }: Props) {
           <button className="link muted" onClick={remove}>Delete</button>
         </div>
       )}
+
+      {!owner && <div style={{ marginTop: 6 }}><button className="link muted" onClick={report}>Report</button></div>}
 
       {open && (
         <div style={{ marginTop: 10, borderTop: '1px solid var(--line)', paddingTop: 10 }}>

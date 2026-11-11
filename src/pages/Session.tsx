@@ -5,6 +5,7 @@ import { useAuth } from '../lib/auth'
 import { FrameStore, encodeTimelapse, fitSize, type Encoded } from '../lib/timelapse'
 import { holdAwake, releaseAwake } from '../lib/wakelock'
 import { fmtFocus, todayLocal } from '../lib/time'
+import { clearRecovery, deleteFrames, loadFrames, loadMeta, putFrame, saveMeta, type Meta } from '../lib/recovery'
 
 type Phase = 'setup' | 'running' | 'review' | 'saving'
 type Kind = 'focus' | 'break'
@@ -51,11 +52,17 @@ export default function Session() {
   const storeRef = useRef(new FrameStore())
   const dimsRef = useRef({ w: 540, h: 960 })
   const dimsSet = useRef(false)
+  const sidRef = useRef('')
+  const startedAtRef = useRef(0)
+  const lastSaved = useRef(0)
+  const [recoverable, setRecoverable] = useState<Meta | null>(null)
+  const [recFrames, setRecFrames] = useState(0)
   const audioRef = useRef<AudioContext | null>(null)
   const S = useRef({
     kind: 'focus' as Kind, phaseStart: 0, phaseLen: 0, focusMs: 0, awayMs: 0, lastTick: 0,
     blocks: 0, breaks: 0, running: false, capturing: false,
   })
+  const postIdRef = useRef('')
   const cfg = useRef({ focusMin: 25, breakMin: 5, facing: 'user' as 'user' | 'environment', record: true })
 
   useEffect(() => {
@@ -98,7 +105,21 @@ export default function Session() {
     c.width = w; c.height = h
     c.getContext('2d')!.drawImage(v, 0, 0, w, h)
     const blob = await new Promise<Blob | null>(res => c!.toBlob(res, 'image/jpeg', 0.72))
-    if (blob) storeRef.current.add(blob)
+    if (blob) {
+      const { id, dropped } = storeRef.current.add(blob)
+      void putFrame(sidRef.current, id, blob)
+      if (dropped.length) void deleteFrames(sidRef.current, dropped)
+    }
+  }, [])
+
+  const persist = useCallback(() => {
+    const s = S.current
+    void saveMeta({
+      sid: sidRef.current, postId: postIdRef.current, focusMin: cfg.current.focusMin, breakMin: cfg.current.breakMin,
+      facing: cfg.current.facing, startedAt: startedAtRef.current, savedAt: Date.now(),
+      focusMs: s.focusMs, awayMs: s.awayMs, blocks: s.blocks, breaks: s.breaks,
+      intervalMs: storeRef.current.intervalMs, w: dimsRef.current.w, h: dimsRef.current.h,
+    })
   }, [])
 
   // capture loop: only while focusing, page visible, camera live
@@ -165,10 +186,11 @@ export default function Session() {
         const last = now < end + (next === 'focus' ? cfg.current.focusMin : cfg.current.breakMin) * 60000
         enterPhase(next, end, !last)
       }
+      if (now - lastSaved.current > 10000) { lastSaved.current = now; persist() }
       setTick(t => t + 1)
     }, 500)
     return () => window.clearInterval(id)
-  }, [phase, enterPhase])
+  }, [phase, enterPhase, persist])
 
   useEffect(() => { if (!peek) return; const t = setTimeout(() => setPeek(false), 4000); return () => clearTimeout(t) }, [peek])
   useEffect(() => { if (!notice) return; const t = setTimeout(() => setNotice(''), 8000); return () => clearTimeout(t) }, [notice])
@@ -185,12 +207,28 @@ export default function Session() {
     return () => document.removeEventListener('visibilitychange', onVis)
   }, [phase, startCamera])
 
-  useEffect(() => () => { stopCamera(); void releaseAwake() }, [stopCamera])
+  useEffect(() => () => {
+    if (S.current.running) { S.current.running = false; persist() }
+    stopCamera(); void releaseAwake()
+  }, [stopCamera, persist])
+
+  // offer to recover an unfinished session
+  useEffect(() => {
+    void (async () => {
+      const m = await loadMeta()
+      if (!m) return
+      const f = await loadFrames(m.sid)
+      if (f.length < 2) { await clearRecovery(); return }
+      setRecFrames(f.length); setRecoverable(m)
+    })()
+  }, [])
 
   // ---- actions ----
   async function start() {
     setErr('')
     cfg.current = { focusMin, breakMin, facing, record }
+    await clearRecovery()
+    sidRef.current = crypto.randomUUID(); postIdRef.current = postId; startedAtRef.current = Date.now(); lastSaved.current = 0
     storeRef.current = new FrameStore()
     dimsRef.current = { w: 540, h: 960 }; dimsSet.current = false
     try { audioRef.current = new AudioContext() } catch { /* no chime */ }
@@ -226,6 +264,26 @@ export default function Session() {
       setEncErr('Not enough footage was captured to make a timelapse.')
     }
   }
+
+  async function recover() {
+    const m = recoverable
+    if (!m) return
+    const items = await loadFrames(m.sid)
+    sidRef.current = m.sid; postIdRef.current = m.postId; setPostId(m.postId)
+    cfg.current = { focusMin: m.focusMin, breakMin: m.breakMin, facing: m.facing, record: true }
+    storeRef.current = new FrameStore()
+    storeRef.current.restore(items, m.intervalMs)
+    dimsRef.current = { w: m.w, h: m.h }
+    setRecoverable(null)
+    setSummary({ focusSec: Math.round(m.focusMs / 1000), blocks: m.blocks, breaks: Math.max(0, m.breaks), awaySec: Math.round(m.awayMs / 1000) })
+    setPhase('review'); setEnc(null); setEncErr(''); setVideoUrl('')
+    try {
+      const out = await encodeTimelapse(storeRef.current.frames, m.w, m.h, setEncPct)
+      setEnc(out); setVideoUrl(URL.createObjectURL(out.blob))
+    } catch (e) { setEncErr(e instanceof Error ? e.message : 'Could not make the video') }
+  }
+
+  async function discardRecovery() { await clearRecovery(); setRecoverable(null) }
 
   async function upload(bucket: string, path: string, body: Blob, type: string) {
     let last: unknown
@@ -266,6 +324,7 @@ export default function Session() {
       })
       if (error) throw error
       if (videoUrl) URL.revokeObjectURL(videoUrl)
+      await clearRecovery()
       nav('/')
     } catch (e) {
       setErr((e as { message?: string })?.message ?? 'Could not save. Try again.')
@@ -281,6 +340,16 @@ export default function Session() {
     return (
       <div className="screen">
         <h2 className="title">Start a session</h2>
+        {recoverable && (
+          <div className="card" data-testid="recover-card">
+            <b>Unfinished session found</b>
+            <p className="muted">{fmtFocus(Math.round(recoverable.focusMs / 1000))} of focus, {recFrames} frames saved from {new Date(recoverable.savedAt).toLocaleString()}.</p>
+            <div className="row">
+              <button className="btn" onClick={recover}>Recover</button>
+              <button className="btn ghost" onClick={discardRecovery}>Discard</button>
+            </div>
+          </div>
+        )}
         <p className="sub">Your phone stays on and the screen goes black while you focus. A timelapse is recorded from the camera.</p>
         <div className="card">
           <label className="muted">Post this session belongs to</label>

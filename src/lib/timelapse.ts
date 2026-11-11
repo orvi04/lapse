@@ -4,18 +4,32 @@ import { Muxer, ArrayBufferTarget } from 'mp4-muxer'
 // every other frame and double the capture interval.
 export class FrameStore {
   frames: Blob[] = []
+  ids: number[] = []
   intervalMs: number
   readonly maxFrames: number
+  private nextId = 0
   constructor(intervalMs = 2000, maxFrames = 600) {
     this.intervalMs = intervalMs
     this.maxFrames = maxFrames
   }
-  add(b: Blob) {
-    this.frames.push(b)
+  // Returns the new frame's id and the ids dropped by decimation (so storage can be kept in step).
+  add(b: Blob): { id: number; dropped: number[] } {
+    const id = this.nextId++
+    this.frames.push(b); this.ids.push(id)
+    const dropped: number[] = []
     if (this.frames.length > this.maxFrames) {
-      this.frames = this.frames.filter((_, i) => i % 2 === 0)
+      const keepF: Blob[] = []; const keepI: number[] = []
+      this.frames.forEach((f, i) => { if (i % 2 === 0) { keepF.push(f); keepI.push(this.ids[i]) } else dropped.push(this.ids[i]) })
+      this.frames = keepF; this.ids = keepI
       this.intervalMs *= 2
     }
+    return { id, dropped }
+  }
+  // Rebuild from recovered frames (already decimated), continuing id numbering.
+  restore(items: { id: number; blob: Blob }[], intervalMs: number) {
+    this.frames = items.map(i => i.blob); this.ids = items.map(i => i.id)
+    this.nextId = (items.at(-1)?.id ?? -1) + 1
+    this.intervalMs = intervalMs
   }
 }
 
