@@ -33,12 +33,22 @@ export type Post = {
 
 export type Promise_ = {
   id: string
-  local_date: string
+  list_id: string
+  user_id: string
   position: number
   text: string
-  status: string
+  status: 'pending' | 'fulfilled'
   fulfilled_at: string | null
-  expires_on: string
+}
+
+export type PromiseList = {
+  id: string
+  user_id: string
+  caption: string | null
+  local_date: string
+  created_at: string
+  feed_expires_at: string
+  archived_at: string | null
 }
 
 export type Friendship = {

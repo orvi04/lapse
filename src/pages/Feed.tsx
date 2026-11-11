@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useState } from 'react'
-import { supabase, type Post, type Profile } from '../lib/supabase'
+import { supabase, type Post, type Profile, type Promise_, type PromiseList } from '../lib/supabase'
 import { ago, fmtFocus, timeLeft } from '../lib/time'
 
+type ListItem = { list: PromiseList; author?: Profile; items: Promise_[] }
 type Item = { post: Post; author?: Profile; thumb?: string; reactions: number; mine: boolean }
 const EMOJI: Record<string, string> = { fire: '🔥', clap: '👏', heart: '❤️', focus: '🎯' }
 
 export default function Feed() {
   const [items, setItems] = useState<Item[]>([])
+  const [lists, setLists] = useState<ListItem[]>([])
   const [loading, setLoading] = useState(true)
   const [uid, setUid] = useState('')
 
@@ -39,6 +41,21 @@ export default function Feed() {
       const mine = reacts.some(r => r.post_id === post.id && r.user_id === (u.user?.id ?? ''))
       out.push({ post, author: authors.get(post.author_id), thumb, reactions: reacts.filter(r => r.post_id === post.id).length, mine })
     }
+    const { data: ls } = await supabase.from('promise_lists')
+      .select('id,user_id,caption,local_date,created_at,feed_expires_at,archived_at')
+      .gt('feed_expires_at', new Date().toISOString()).order('created_at', { ascending: false }).limit(30)
+    const listRows = (ls as PromiseList[]) ?? []
+    const listIds = listRows.map(l => l.id)
+    const { data: lps } = listIds.length
+      ? await supabase.from('promises').select('id,list_id,user_id,position,text,status,fulfilled_at').in('list_id', listIds).order('position')
+      : { data: [] }
+    const missing = [...new Set(listRows.map(l => l.user_id))].filter(id => !authors.has(id))
+    if (missing.length) {
+      const { data: more } = await supabase.from('profiles').select('id,username,display_name,avatar_path,timezone').in('id', missing)
+      for (const p of (more as Profile[]) ?? []) authors.set(p.id, p)
+    }
+    const proms = (lps as Promise_[]) ?? []
+    setLists(listRows.map(list => ({ list, author: authors.get(list.user_id), items: proms.filter(p => p.list_id === list.id) })))
     setItems(out); setLoading(false)
   }, [])
   useEffect(() => { void load() }, [load])
@@ -54,7 +71,28 @@ export default function Feed() {
       <h2 className="title">Today</h2>
       <p className="sub">Posts from you and your friends. They leave the feed after 24 hours.</p>
       {loading && <p className="muted">Loading…</p>}
-      {!loading && items.length === 0 && <p className="muted">Nothing here yet. Tap + to start a session, or add friends.</p>}
+      {!loading && items.length === 0 && lists.length === 0 && <p className="muted">Nothing here yet. Tap + to start a session, or add friends.</p>}
+      {lists.map(({ list, author, items: its }) => {
+        const done = its.filter(i => i.status === 'fulfilled').length
+        return (
+          <div className="card" key={list.id}>
+            <div className="row">
+              <div className="avatar">{author?.display_name[0]?.toUpperCase() ?? '?'}</div>
+              <div className="grow"><div>{author?.display_name ?? 'Unknown'}</div><div className="muted">{ago(list.created_at)} · {timeLeft(list.feed_expires_at)}</div></div>
+              <span className="chip">Promises {done}/{its.length}</span>
+            </div>
+            {list.caption && <div className="mid" style={{ margin: '10px 0 6px' }}>{list.caption}</div>}
+            <div style={{ marginTop: 10 }}>
+              {its.map(p => (
+                <div key={p.id} className="row" style={{ marginBottom: 8 }}>
+                  <span className={'tick' + (p.status === 'fulfilled' ? ' done' : '')} style={{ cursor: 'default', width: 22, height: 22 }}>✓</span>
+                  <div className="grow" style={{ textDecoration: p.status === 'fulfilled' ? 'line-through' : 'none', color: p.status === 'fulfilled' ? 'var(--mute)' : 'inherit' }}>{p.text}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )
+      })}
       {items.map(({ post, author, thumb, reactions, mine }) => (
         <div className="card" key={post.id}>
           <div className="row">
