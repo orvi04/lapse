@@ -33,10 +33,7 @@ export default function Promises() {
   }
 
   async function toggle(p: Promise_) {
-    const done = p.status === 'fulfilled'
-    const { error } = await supabase.from('promises').update({
-      status: done ? 'open' : 'fulfilled', fulfilled_at: done ? null : new Date().toISOString(),
-    }).eq('id', p.id)
+    const { error } = await supabase.rpc('set_promise_status', { p_id: p.id, p_fulfilled: p.status !== 'fulfilled' })
     if (error) setErr(error.message); else void load()
   }
 
