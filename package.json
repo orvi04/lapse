@@ -5,7 +5,8 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc"
+    "typecheck": "tsc",
+    "test:auth": "node tests/auth.e2e.mjs"
   },
   "repository": {
     "type": "git",
@@ -26,6 +27,7 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.3.0",
+    "puppeteer-core": "^25.17.0",
     "typescript": "^7.0.2",
     "vite": "^8.3.7",
     "vite-plugin-pwa": "^2.0.0"
