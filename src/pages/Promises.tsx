@@ -76,6 +76,7 @@ function PostCard({ p, items, onToggle, onAdd, onDelete }: {
           <div>{p.caption || 'Promises'}</div>
           <div className="muted">{ago(p.created_at)} · {done}/{items.length} done · {timeLeft(p.feed_expires_at)}</div>
         </div>
+        {!p.media_id && !p.focus_seconds && <Link to={`/session?post=${p.id}`} className="btn small" style={{ textDecoration: 'none' }}>Record</Link>}
         <button className="link muted" onClick={() => onDelete(p)}>Delete</button>
       </div>
       <div style={{ height: 4, background: 'var(--s2)', borderRadius: 4, marginBottom: 12 }}>

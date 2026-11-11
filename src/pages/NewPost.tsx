@@ -17,18 +17,18 @@ export default function NewPost() {
     if (t) { setItems(i => [...i, t]); setText('') }
   }
 
-  async function post() {
+  async function post(record = false) {
     setErr('')
     const all = text.trim() ? [...items, text.trim()] : items
     if (all.length === 0 && !caption.trim()) return setErr('Add a promise or a caption first.')
     setBusy(true)
-    const { error } = await supabase.rpc('create_post', {
+    const { data, error } = await supabase.rpc('create_post', {
       p_caption: caption, p_items: all, p_local_date: todayLocal(),
       p_timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
     })
     setBusy(false)
     if (error) return setErr(error.message)
-    nav('/promises')
+    nav(record && data ? `/session?post=${data as string}` : '/promises')
   }
 
   return (
@@ -49,8 +49,8 @@ export default function NewPost() {
           <button type="submit" className="btn small ghost">Add</button>
         </form>
         {err && <div className="err">{err}</div>}
-        <button className="btn" style={{ marginTop: 12 }} disabled={busy} onClick={post}>Post</button>
-        <p className="muted" style={{ marginTop: 10, marginBottom: 0 }}>Recording a session for this post is coming next.</p>
+        <button className="btn" style={{ marginTop: 12 }} disabled={busy} onClick={() => post(true)}>Post &amp; start recording</button>
+        <button className="btn ghost" style={{ marginTop: 10 }} disabled={busy} onClick={() => post(false)}>Post now, record later</button>
       </div>
     </div>
   )

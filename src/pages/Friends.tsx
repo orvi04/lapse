@@ -3,13 +3,15 @@ import { supabase, type Friendship, type Profile } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
 
 type Row = { f: Friendship; other: Profile }
+type Hit = { id: string; username: string; display_name: string; relation: 'none' | 'friends' | 'sent' | 'received' }
 
 export default function Friends() {
   const { session } = useAuth()
   const uid = session!.user.id
   const [rows, setRows] = useState<Row[]>([])
-  const [username, setUsername] = useState('')
-  const [msg, setMsg] = useState('')
+  const [q, setQ] = useState('')
+  const [hits, setHits] = useState<Hit[] | null>(null)
+  const [searching, setSearching] = useState(false)
   const [err, setErr] = useState('')
 
   const load = useCallback(async () => {
@@ -27,30 +29,46 @@ export default function Friends() {
   }, [uid])
   useEffect(() => { void load() }, [load])
 
-  async function add(e: React.FormEvent) {
-    e.preventDefault(); setErr(''); setMsg('')
-    const { error } = await supabase.rpc('send_friend_request', { p_username: username.trim().replace(/^@/, '') })
+  async function search(e: React.FormEvent) {
+    e.preventDefault()
+    setErr('')
+    const term = q.trim().replace(/^@/, '')
+    if (term.length < 3) { setHits(null); return setErr('Type at least 3 characters.') }
+    setSearching(true)
+    const { data, error } = await supabase.rpc('search_profiles', { p_query: term })
+    setSearching(false)
     if (error) return setErr(error.message)
-    setUsername(''); setMsg("Request sent (or accepted if they'd already asked you)."); void load()
+    setHits((data as Hit[]) ?? [])
+  }
+  async function request(h: Hit) {
+    setErr('')
+    const { error } = await supabase.rpc('send_friend_request', { p_username: h.username })
+    if (error) return setErr(error.message)
+    setHits(list => list?.map(x => (x.id === h.id ? { ...x, relation: x.relation === 'received' ? 'friends' : 'sent' } : x)) ?? null)
+    void load()
   }
   async function respond(id: string, accept: boolean) {
     const { error } = await supabase.rpc('respond_friend_request', { p_id: id, p_accept: accept })
     if (error) setErr(error.message); else void load()
   }
+  async function unfriendOrCancel(f: Friendship) {
+    const { error } = await supabase.from('friendships').delete().eq('id', f.id)
+    if (error) setErr(error.message); else void load()
+  }
   async function block(other: string) {
     if (!confirm('Block this user? They will no longer see your posts.')) return
     const { error } = await supabase.from('blocks').insert({ blocker_id: uid, blocked_id: other })
-    if (error) setErr(error.message); else void load()
+    if (error) setErr(error.message); else { void load(); setHits(null) }
   }
 
   const incoming = rows.filter(r => r.f.status === 'pending' && r.f.requested_by !== uid)
   const outgoing = rows.filter(r => r.f.status === 'pending' && r.f.requested_by === uid)
   const friends = rows.filter(r => r.f.status === 'accepted')
 
-  const Person = ({ p, children }: { p: Profile; children?: React.ReactNode }) => (
+  const Person = ({ name, username, children }: { name: string; username: string; children?: React.ReactNode }) => (
     <div className="card row">
-      <div className="avatar">{p.display_name[0]?.toUpperCase()}</div>
-      <div className="grow"><div>{p.display_name}</div><div className="muted">@{p.username}</div></div>
+      <div className="avatar">{name[0]?.toUpperCase()}</div>
+      <div className="grow"><div>{name}</div><div className="muted">@{username}</div></div>
       {children}
     </div>
   )
@@ -58,28 +76,47 @@ export default function Friends() {
   return (
     <div className="screen">
       <h2 className="title">Friends</h2>
-      <p className="sub">Add people by username. Only friends see your posts.</p>
-      <form onSubmit={add} className="row">
-        <input className="input" style={{ marginBottom: 0 }} placeholder="@username" value={username} onChange={e => setUsername(e.target.value)} required />
-        <button className="btn small">Add</button>
+      <p className="sub">Search by username or name, then send a request. Only friends see your posts.</p>
+      <form onSubmit={search} className="row">
+        <input className="input" style={{ marginBottom: 0 }} placeholder="Search people" value={q} onChange={e => setQ(e.target.value)} />
+        <button className="btn small" disabled={searching}>{searching ? '…' : 'Search'}</button>
       </form>
       {err && <div className="err">{err}</div>}
-      {msg && <div className="ok">{msg}</div>}
+
+      {hits && (
+        <div style={{ marginTop: 14 }}>
+          {hits.length === 0 && <p className="muted">No one found for "{q.trim()}".</p>}
+          {hits.map(h => (
+            <Person key={h.id} name={h.display_name} username={h.username}>
+              {h.relation === 'none' && <button className="btn small" onClick={() => request(h)}>Request</button>}
+              {h.relation === 'sent' && <span className="chip">Requested</span>}
+              {h.relation === 'received' && <button className="btn small" onClick={() => request(h)}>Accept</button>}
+              {h.relation === 'friends' && <span className="chip green">Friends</span>}
+            </Person>
+          ))}
+        </div>
+      )}
 
       {incoming.length > 0 && <h3 style={{ margin: '22px 0 10px' }}>Requests</h3>}
       {incoming.map(r => (
-        <Person key={r.f.id} p={r.other}>
+        <Person key={r.f.id} name={r.other.display_name} username={r.other.username}>
           <button className="btn small" onClick={() => respond(r.f.id, true)}>Accept</button>
           <button className="btn small ghost" onClick={() => respond(r.f.id, false)}>Decline</button>
         </Person>
       ))}
       {outgoing.length > 0 && <h3 style={{ margin: '22px 0 10px' }}>Sent</h3>}
-      {outgoing.map(r => <Person key={r.f.id} p={r.other}><span className="chip">Pending</span></Person>)}
+      {outgoing.map(r => (
+        <Person key={r.f.id} name={r.other.display_name} username={r.other.username}>
+          <span className="chip">Pending</span>
+          <button className="link muted" onClick={() => unfriendOrCancel(r.f)}>Cancel</button>
+        </Person>
+      ))}
 
       <h3 style={{ margin: '22px 0 10px' }}>Your friends ({friends.length})</h3>
-      {friends.length === 0 && <p className="muted">No friends yet. Share your username so they can add you.</p>}
+      {friends.length === 0 && <p className="muted">No friends yet. Search for someone above.</p>}
       {friends.map(r => (
-        <Person key={r.f.id} p={r.other}>
+        <Person key={r.f.id} name={r.other.display_name} username={r.other.username}>
+          <button className="link muted" onClick={() => unfriendOrCancel(r.f)}>Remove</button>
           <button className="link muted" onClick={() => block(r.other.id)}>Block</button>
         </Person>
       ))}
