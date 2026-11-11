@@ -8,6 +8,7 @@ import Friends from './pages/Friends'
 import You from './pages/You'
 import NewPost from './pages/NewPost'
 import Session from './pages/Session'
+import Profile from './pages/Profile'
 
 const icons = {
   feed: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="12" cy="12" r="4"/></svg>,
@@ -29,6 +30,7 @@ export default function App() {
         <Route path="/promises" element={<Promises />} />
         <Route path="/new" element={<NewPost />} />
         <Route path="/session" element={<Session />} />
+        <Route path="/u/:username" element={<Profile />} />
         <Route path="/friends" element={<Friends />} />
         <Route path="/you" element={<You />} />
         <Route path="*" element={<Navigate to="/" replace />} />

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { supabase, type Friendship, type Profile } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
 
@@ -65,10 +66,13 @@ export default function Friends() {
   const outgoing = rows.filter(r => r.f.status === 'pending' && r.f.requested_by === uid)
   const friends = rows.filter(r => r.f.status === 'accepted')
 
-  const Person = ({ name, username, children }: { name: string; username: string; children?: React.ReactNode }) => (
+  const Person = ({ name, username, link, children }: { name: string; username: string; link?: boolean; children?: React.ReactNode }) => (
     <div className="card row">
       <div className="avatar">{name[0]?.toUpperCase()}</div>
-      <div className="grow"><div>{name}</div><div className="muted">@{username}</div></div>
+      <div className="grow">
+        <div>{link ? <Link to={`/u/${username}`} style={{ color: 'inherit', textDecoration: 'none' }}>{name}</Link> : name}</div>
+        <div className="muted">@{username}</div>
+      </div>
       {children}
     </div>
   )
@@ -115,7 +119,7 @@ export default function Friends() {
       <h3 style={{ margin: '22px 0 10px' }}>Your friends ({friends.length})</h3>
       {friends.length === 0 && <p className="muted">No friends yet. Search for someone above.</p>}
       {friends.map(r => (
-        <Person key={r.f.id} name={r.other.display_name} username={r.other.username}>
+        <Person key={r.f.id} name={r.other.display_name} username={r.other.username} link>
           <button className="link muted" onClick={() => unfriendOrCancel(r.f)}>Remove</button>
           <button className="link muted" onClick={() => block(r.other.id)}>Block</button>
         </Person>
